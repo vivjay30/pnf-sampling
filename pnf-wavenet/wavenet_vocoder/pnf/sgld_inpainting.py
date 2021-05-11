@@ -34,14 +34,11 @@ from wavenet_vocoder.pnf.pnf_utils import *
 SAMPLE_SIZE = -1  # -1 means process the whole file. Otherwise specify number of samples
 SGLD_WINDOW = 50000  # -1 means SGLD window is the whole file, otherwise specify sgld window
 BATCH_SIZE = 1
-N_STEPS = 4000  # Number of steps per noise level. More is longer but higher quality
+N_STEPS = 256  # Number of steps per noise level. More is longer but higher quality
+GAP = (1.1, 1.3)  # The gap to inpaint in seconds
 
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
-
-
-class ModelWrapper(torch.nn.Module):
-
 
 def main(args):
     model = ModelWrapper()
@@ -51,6 +48,7 @@ def main(args):
 
     writing_dir = args["<output-dir>"]
     os.makedirs(writing_dir, exist_ok=True)
+    print("writing dir: {}".format(writing_dir))
 
     # Load up a sample
     x_original = librosa.core.load(args["<input-file>"], sr=22050, mono=True)[0]
@@ -69,16 +67,18 @@ def main(args):
     x_original /= abs(x_original).max()
     sf.write(os.path.join(writing_dir, "x_original.wav"), x_original, hparams.sample_rate)
 
-    # Initialize with original sample
-    x = torch.FloatTensor(P.mulaw_quantize(x_original, hparams.quantize_channels - 1)).unsqueeze(0).to(device)
+    x_modified = x_original
+    x_modified[int(GAP[0] * 22050): int(GAP[1] * 22050)] = 0
+    sf.write(os.path.join(writing_dir, "x_modified.wav"), x_modified, hparams.sample_rate)
+
+    # Initialize with modified sample
+    x = torch.FloatTensor(P.mulaw_quantize(x_modified, hparams.quantize_channels - 1)).unsqueeze(0).to(device)
     x.requires_grad = True
 
     # Constraint mask for which samples to inpaint
     mask = np.zeros(x.shape)
 
-    gap = (1.1, 1.5)  # The gap to inpaint in seconds
-
-    mask[0, int(gap[0] * 22050): int(gap[1] * 22050)] = 1
+    mask[0, int(GAP[0] * 22050): int(GAP[1] * 22050)] = 1
     mask = torch.FloatTensor(mask).to(device)
 
     sigmas = [175.9, 110., 68.7, 54.3, 42.9, 34.0, 26.8, 21.2, 16.8, 13.3, 10.5, 8.29, 6.55, 5.18, 4.1, 3.24, 2.56, 1.6, 1.0, 0.625, 0.39, 0.244, 0.15, 0.1]
@@ -88,7 +88,7 @@ def main(args):
         print(n_steps_sgld)
         
         # Bump down a model
-        checkpoint_path = join(args["<checkpoint>"], checkpoints[sigma], "checkpoint_latest.pth")
+        checkpoint_path = join(args["<checkpoint>"], CHECKPOINTS[sigma], "checkpoint_latest_ema.pth")
         model.load_checkpoint(checkpoint_path)
 
         parmodel = torch.nn.DataParallel(model)
