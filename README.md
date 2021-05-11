@@ -1,5 +1,5 @@
 # Parallel and Flexible Sampling from Autoregressive Models via Langevin Dynamics
-![Audio Super Resolution](super_res_panel.png)
+![Audio Super Resolution](images/super_res_panel.png)
 
 ## Authors
 [Vivek Jayaram](http://www.vivekjayaram.com/)**\***, [John Thickstun](https://homes.cs.washington.edu/~thickstn/)<br>
@@ -17,4 +17,4 @@ We propose a new way to sample from autoregressive models by smoothing the distr
 
 There are two subdirectories, one for audio experiments using a wavenet model and one for small scale image experiments using a pixelcnn++ model. Each directory is independent and contains a Readme for specific running instructions. 
 
-![Image Inpainting](pixelcnn.png)
+![Image Inpainting](images/pixelcnn.png)
