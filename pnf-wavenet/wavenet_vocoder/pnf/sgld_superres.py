@@ -2,7 +2,7 @@
 """
 Synthesis waveform for testset
 
-usage: separation.py [options] <checkpoint> <input-file>
+usage: separation.py [options] <checkpoint> <input-file> <output-dir>
 
 options:
     --hparams=<parmas>          Hyper parameters [default: ].
@@ -33,10 +33,10 @@ from wavenet_vocoder.pnf.pnf_utils import *
 # could possibly try to fix this by carefully choosing non-overlapping update windows?
 
 # Total number of samples to use for the input and output
-SAMPLE_SIZE = -1  # Set this to -1 to just process the entire input file
+SAMPLE_SIZE = -1  # Set this to -1 to just process the entire input file. Otherwise pick a number of samples
 SGLD_WINDOW = 20000
 BATCH_SIZE = 2  # BATCH_SIZE % Number of gpus must be zero
-N_STEPS = 1024 # Langevin iterations per noise level
+N_STEPS = 256 # Langevin iterations per noise level for each sample
 
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
@@ -46,12 +46,14 @@ def main(args):
     model = ModelWrapper()
     model.eval()
 
+    if args["--downsample_interval"] is None:
+        raise(ValueError("Must specify downsample fraction with --downsample_interval"))
     downsample_interval = int(args["--downsample_interval"])
 
     receptive_field = model.receptive_field
 
     # Change the output dir if you want
-    writing_dir = "super_resolution_outputs"
+    writing_dir = args["<output-dir>"]
     os.makedirs(writing_dir, exist_ok=True)
     print("writing dir: {}".format(writing_dir))
 
@@ -84,7 +86,8 @@ def main(args):
     # Initialize with noise for the samples we need to fill in, or x original for the samples
     # we are allowed to use
     noise = np.random.uniform(0, 256, size=x_original.shape)
-    x = P.mulaw_quantize(x_original, hparams.quantize_channels - 1) * (1 - mask) + noise * (mask)
+    mask_np = mask[0].detach().cpu().numpy()
+    x = P.mulaw_quantize(x_original, hparams.quantize_channels - 1) * (1 - mask_np) + noise * (mask_np)
     x = torch.FloatTensor(x).unsqueeze(0).to(device)
     x.requires_grad = True
 
@@ -96,7 +99,7 @@ def main(args):
         print("Number of SGLD steps {}".format(n_steps_sgld))
         
         # Bump down a model
-        checkpoint_path = join(args["<checkpoint>"], checkpoints[sigma], "checkpoint_latest.pth")
+        checkpoint_path = join(args["<checkpoint>"], CHECKPOINTS[sigma], "checkpoint_latest_ema.pth")
         model.load_checkpoint(checkpoint_path)
 
         parmodel = torch.nn.DataParallel(model)
@@ -117,6 +120,7 @@ def main(args):
                 patches.append(x[:, j[k]:j[k] + SGLD_WINDOW])
 
             patches = torch.stack(patches, axis=0)
+
 
             # Forward pass
             log_prob, prediction = parmodel(patches, sigma=sigma)

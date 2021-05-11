@@ -2,7 +2,7 @@
 """
 Synthesis waveform for testset
 
-usage: separation.py [options] <checkpoint> <input-file>
+usage: separation.py [options] <checkpoint> <input-file> <output-dir>
 
 options:
     --hparams=<parmas>          Hyper parameters [default: ].
@@ -25,60 +25,23 @@ from hparams import hparams
 from train import build_model
 from nnmnkwii import preprocessing as P
 from wavenet_vocoder.util import linear_quantize, inv_linear_quantize
+from wavenet_vocoder.pnf.pnf_utils import *
+
 
 # optimization will blow up if BATCH_SIZE is too large relative to SAMPLE_SIZE/SGLD_WINDOW ratio
 # because approximate independence of the gradient updates will be violated too often)
 # could possibly try to fix this by carefully choosing non-overlapping update windows?
-SAMPLE_SIZE = -1
-SGLD_WINDOW = 50000
+SAMPLE_SIZE = -1  # -1 means process the whole file. Otherwise specify number of samples
+SGLD_WINDOW = 50000  # -1 means SGLD window is the whole file, otherwise specify sgld window
 BATCH_SIZE = 1
-N_STEPS = 4000
+N_STEPS = 4000  # Number of steps per noise level. More is longer but higher quality
 
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
 
-# The various noise levels, geometrically spaced
-checkpoints = {
-               175.9         : 'checkpoints175pt9',
-               110.          : 'checkpoints110pt0',
-               68.7          : 'checkpoints68pt7',
-               54.3          : 'checkpoints54pt3',
-               42.9          : 'checkpoints42pt9',
-               34.0          : 'checkpoints34pt0',
-               26.8          : 'checkpoints26pt8',
-               21.2          : 'checkpoints21pt2',
-               16.8          : 'checkpoints16pt8',
-               13.3          : 'checkpoints13pt3',
-               10.5          : 'checkpoints10pt5',
-               8.29          : 'checkpoints8pt29',
-               6.55          : 'checkpoints6pt55',
-               5.18          : 'checkpoints5pt18',
-               4.1           : 'checkpoints4pt1',
-               3.24          : 'checkpoints3pt24',
-               2.56          : 'checkpoints2pt56',
-               1.6           : 'checkpoints1pt6',
-               1.0           : 'checkpoints1pt0',
-               0.625         : 'checkpoints0pt625',
-               0.39          : 'checkpoints0pt39',
-               0.244         : 'checkpoints0pt244',
-               0.15          : 'checkpoints0pt15',
-               0.1           : 'checkpoints0pt1'
-}
 
 class ModelWrapper(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.model = build_model()
-        self.model.eval()
-        self.receptive_field = self.model.receptive_field
 
-    def load_checkpoint(self, path):
-        print("Load checkpoint from {}".format(path))
-        checkpoint = torch.load(path)
-        self.model.load_state_dict(checkpoint["state_dict"])
-
-    def forward(self, x, sigma):
-        return self.model.smoothed_loss(x, sigma=sigma, batched=True)
 
 def main(args):
     model = ModelWrapper()
@@ -86,7 +49,7 @@ def main(args):
 
     receptive_field = model.receptive_field
 
-    writing_dir = "inpainting_experiments"
+    writing_dir = args["<output-dir>"]
     os.makedirs(writing_dir, exist_ok=True)
 
     # Load up a sample

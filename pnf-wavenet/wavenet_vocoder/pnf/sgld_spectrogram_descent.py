@@ -2,7 +2,7 @@
 """
 Synthesis waveform for testset
 
-usage: separation.py [options] <checkpoint> <dump-root>
+usage: separation.py [options] <checkpoint> <dump-root> <output-dir>
 
 options:
     --hparams=<parmas>          Hyper parameters [default: ].
@@ -54,7 +54,7 @@ def main(args):
     test_data_loader = get_data_loader(args["<dump-root>"], collate_fn)
 
     # Change the output dir if you want
-    writing_dir = "spectrogram_conditioned_outputs"
+    writing_dir = args["<output-dir>"]
     if not exists(writing_dir):
         os.makedirs(writing_dir)
     print("writing dir: {}".format(writing_dir))
@@ -106,6 +106,8 @@ def main(args):
                 patches_c.append(c[0, :, j[k] - hparams.cin_pad : j[k] + hparams.cin_pad + (SGLD_WINDOW // hparams.hop_size)])
                 patches_x.append(x[:, x_start[k] : x_start[k] + SGLD_WINDOW + 1])
 
+            import pdb
+            pdb.set_trace()
             patches_c = torch.stack(patches_c, axis=0)
             patches_x = torch.stack(patches_x, axis=0)
 
