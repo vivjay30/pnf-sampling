@@ -1,5 +1,6 @@
 # Parallel and Flexible Sampling from Autoregressive Models via Langevin Dynamics
-![alt text](super_res_panel.png)
+![Audio Super Resolution](super_res_panel.png)
+![Image Inpainting](pixelcnn.png)
 
 ## Authors
 [Vivek Jayaram](http://www.vivekjayaram.com/)**\***, [John Thickstun](https://homes.cs.washington.edu/~thickstn/)<br>
