@@ -2,7 +2,7 @@
 """
 Synthesis waveform for testset
 
-usage: separation.py [options] <checkpoint0> <checkpoint1>
+usage: separation.py [options] <checkpoint0> <checkpoint1> <input-file1> <input-file2> <output-dir>
 
 options:
     --hparams=<parmas>          Hyper parameters [default: ].
@@ -10,6 +10,8 @@ options:
     -h, --help                  Show help message.
 """
 from docopt import docopt
+import json
+import os
 from os.path import dirname, join, basename, splitext, exists
 
 import time
@@ -24,60 +26,19 @@ from hparams import hparams
 from train import build_model
 from nnmnkwii import preprocessing as P
 from wavenet_vocoder.util import linear_quantize, inv_linear_quantize
+from wavenet_vocoder.pnf.pnf_utils import *
 
 # optimization will blow up if BATCH_SIZE is too large relative to SAMPLE_SIZE/SGLD_WINDOW ratio
 # because approximate independence of the gradient updates will be violated too often)
 # could possibly try to fix this by carefully choosing non-overlapping update windows?
-SAMPLE_SIZE = -1
+SAMPLE_SIZE = -1 # -1 means process the whole file. Otherwise specify number of samples
 SGLD_WINDOW = 20000
-BATCH_SIZE = 3  # Must be divisible by the GPUs
-PREFIX = "hamilton2"
+BATCH_SIZE = 2  # Must be divisible by the GPUs
+N_STEPS = 256  # Increase for better quality outputs
 
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
 
-# The various noise levels, geometrically spaced
-checkpoints = {
-               175.9         : 'checkpoints175pt9',
-               110.          : 'checkpoints110pt0',
-               68.7          : 'checkpoints68pt7',
-               54.3          : 'checkpoints54pt3',
-               42.9          : 'checkpoints42pt9',
-               34.0          : 'checkpoints34pt0',
-               26.8          : 'checkpoints26pt8',
-               21.2          : 'checkpoints21pt2',
-               16.8          : 'checkpoints16pt8',
-               13.3          : 'checkpoints13pt3',
-               10.5          : 'checkpoints10pt5',
-               8.29          : 'checkpoints8pt29',
-               6.55          : 'checkpoints6pt55',
-               5.18          : 'checkpoints5pt18',
-               4.1           : 'checkpoints4pt1',
-               3.24          : 'checkpoints3pt24',
-               2.56          : 'checkpoints2pt56',
-               1.6           : 'checkpoints1pt6',
-               1.0           : 'checkpoints1pt0',
-               0.625         : 'checkpoints0pt625',
-               0.39          : 'checkpoints0pt39',
-               0.244         : 'checkpoints0pt244',
-               0.15          : 'checkpoints0pt15',
-               0.1           : 'checkpoints0pt0'
-}
-
-class ModelWrapper(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.model = build_model()
-        self.model.eval()
-        self.receptive_field = self.model.receptive_field
-
-    def load_checkpoint(self, path):
-        print("Load checkpoint from {}".format(path))
-        checkpoint = torch.load(path)
-        self.model.load_state_dict(checkpoint["state_dict"])
-
-    def forward(self, x, sigma):
-        return self.model.smoothed_loss(x, sigma=sigma, batched=True)
 
 def main(args):
     model0 = ModelWrapper()
@@ -85,7 +46,14 @@ def main(args):
     
     receptive_field = model0.receptive_field
 
-    mixed = librosa.core.load("../../hamilton_cropped2.m4a", sr=22050, mono=True)[0]
+    writing_dir = args["<output-dir>"]
+    os.makedirs(writing_dir, exist_ok=True)
+    print("writing dir: {}".format(writing_dir))
+
+    source1 = librosa.core.load(args["<input-file1>"], sr=22050, mono=True)[0]
+    source2 = librosa.core.load(args["<input-file2>"], sr=22050, mono=True)[0]
+    mixed = source1 + source2
+
     # Increase the volume of the mixture fo avoid artifacts from linear encoding
     mixed /= abs(mixed).max()
     mixed *= 1.4
@@ -101,14 +69,13 @@ def main(args):
     # Write inputs
     mixed_out = inv_linear_quantize(mixed[0].detach().cpu().numpy(), hparams.quantize_channels - 1) - 1.0
     mixed_out = np.clip(mixed_out, -1, 1)
-    sf.write(PREFIX + "_" + "mixed.wav", mixed_out, hparams.sample_rate)
+    sf.write(join(writing_dir, "mixed.wav"), mixed_out, hparams.sample_rate)
 
     # Initialize with noise
     x0 = torch.FloatTensor(np.random.uniform(0, 512, size=(1, SAMPLE_SIZE))).to(device)
     x0[:] = mixed - 127.0
     x0 = F.pad(x0, (receptive_field, receptive_field), "constant", 127)
     x0.requires_grad = True
-
     
     x1 = torch.FloatTensor(np.random.uniform(0, 512, size=(1, SAMPLE_SIZE))).to(device)
     x1[:] = 127.
@@ -121,12 +88,12 @@ def main(args):
 
     for idx, sigma in enumerate(sigmas):
         # We make sure each sample is updated a certain number of times
-        n_steps = int((SAMPLE_SIZE/(SGLD_WINDOW*BATCH_SIZE))*1000)
-        print(n_steps)
+        n_steps = int((SAMPLE_SIZE/(SGLD_WINDOW*BATCH_SIZE))*N_STEPS)
+        print("Number of SGLD steps {}".format(n_steps))
         # Bump down a model
-        checkpoint_path0 = join(args["<checkpoint0>"], checkpoints[sigma], "checkpoint_latest.pth")
+        checkpoint_path0 = join(args["<checkpoint0>"], CHECKPOINTS[sigma], "checkpoint_latest_ema.pth")
         model0.load_checkpoint(checkpoint_path0)
-        checkpoint_path1 = join(args["<checkpoint1>"], checkpoints[sigma], "checkpoint_latest.pth")
+        checkpoint_path1 = join(args["<checkpoint1>"], CHECKPOINTS[sigma], "checkpoint_latest_ema.pth")
         model1.load_checkpoint(checkpoint_path1)
 
         parmodel0 = torch.nn.DataParallel(model0)
@@ -213,11 +180,11 @@ def main(args):
 
         out0 = inv_linear_quantize(x0[0].detach().cpu().numpy(), hparams.quantize_channels - 1)
         out0 = np.clip(out0, -1, 1)
-        sf.write(PREFIX + "_" + "out0_{}.wav".format(sigma), out0, hparams.sample_rate)
+        sf.write(join(writing_dir, "out0_{}.wav".format(sigma)), out0, hparams.sample_rate)
 
         out1 = inv_linear_quantize(x1[0].detach().cpu().numpy(), hparams.quantize_channels - 1)
         out1 = np.clip(out1, -1, 1)
-        sf.write(PREFIX + "_" + "out1_{}.wav".format(sigma), out1, hparams.sample_rate)
+        sf.write(join(writing_dir, "out1_{}.wav".format(sigma)), out1, hparams.sample_rate)
 
 
 if __name__ == "__main__":

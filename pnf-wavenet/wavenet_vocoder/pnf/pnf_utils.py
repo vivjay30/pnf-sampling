@@ -28,7 +28,7 @@ CHECKPOINTS = {
      0.39          : 'checkpoints0pt39',
      0.244         : 'checkpoints0pt244',
      0.15          : 'checkpoints0pt15',
-     0.1           : 'checkpoints0pt0'
+     0.1           : 'checkpoints0pt1'
 }
 
 

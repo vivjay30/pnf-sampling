@@ -106,8 +106,6 @@ def main(args):
                 patches_c.append(c[0, :, j[k] - hparams.cin_pad : j[k] + hparams.cin_pad + (SGLD_WINDOW // hparams.hop_size)])
                 patches_x.append(x[:, x_start[k] : x_start[k] + SGLD_WINDOW + 1])
 
-            import pdb
-            pdb.set_trace()
             patches_c = torch.stack(patches_c, axis=0)
             patches_x = torch.stack(patches_x, axis=0)
 
