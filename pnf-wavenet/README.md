@@ -17,14 +17,14 @@ Download the checkpoints for the folder `mulaw_maxaudio_spectrogram` and place t
 
 Here is a sample command. The outputs will be writtien to the folder `spectrogram_conditioned_outputs` but you can change that.
 ```
-CUDA_VISIBLE_DEVICES=0 python wavenet_vocoder/pnf/sgld_spectrogram_descent.py
-    egs/mulaw_maxaudio_spectrogram/vctk
-    egs/mulaw_maxaudio_spectrogram/vctk/dump_norm/dev
-    spectrogram_conditioned_outputs
+CUDA_VISIBLE_DEVICES=0 python wavenet_vocoder/pnf/sgld_spectrogram_descent.py \
+    egs/mulaw_maxaudio_spectrogram/vctk \
+    egs/mulaw_maxaudio_spectrogram/vctk/dump_norm/dev \
+    spectrogram_conditioned_outputs \
     --preset="egs/mulaw_maxaudio_spectrogram/config.json"
 ```
 
-Creating spectrograms for input: If you look in `egs/mulaw_maxaudio_spectrogram/vctk/dump_norm/dev` you'll see an audio file and spectrogram that was used in the generation process. These spectrograms are generated with specific parameters and normalized. If you want to generate spectrograms that are compatible with the generation process, follow these steps:
+Creating spectrograms for input: If you look in `egs/mulaw_maxaudio_spectrogram/vctk/dump_norm/dev` you'll see an audio file and spectrogram that was used in the generation process. These spectrograms are generated with specific parameters and normalized. If you want to generate spectrograms that are compatible with the generation process, the steps are written at the bottom of this readme.
 
 
 
@@ -33,11 +33,11 @@ Download the checkpoints for the folder `mulaw_maxaudio` and place them in `pnf-
 
 Here is a sample command that will do 4x super resolution. The outputs will be written to the folder `superres_outputs` but you can change that. 
 ```
-CUDA_VISIBLE_DEVICES=0 python wavenet_vocoder/pnf/sgld_superres.py
-    egs/mulaw_maxaudio/supra_piano
-    egs/sample_piano.wav
-    superres_outputs
-    --preset="egs/mulaw_maxaudio/config.json" 
+CUDA_VISIBLE_DEVICES=0 python wavenet_vocoder/pnf/sgld_superres.py \
+    egs/mulaw_maxaudio/supra_piano \
+    egs/sample_piano.wav \
+    superres_outputs \
+    --preset="egs/mulaw_maxaudio/config.json" \
     --downsample_interval 4
 ```
 
@@ -48,10 +48,10 @@ Download the checkpoints for the folder `mulaw_maxaudio` and place them in `pnf-
 
 Here is a sample command that will do 200ms inpainting. The outputs will be written to the folder `inpainting_outputs` but you can change that. 
 ```
-CUDA_VISIBLE_DEVICES=0 python wavenet_vocoder/pnf/sgld_inpainting.py
-    egs/mulaw_maxaudio/supra_piano
-    egs/sample_piano.wav
-    inpainting_outputs
+CUDA_VISIBLE_DEVICES=0 python wavenet_vocoder/pnf/sgld_inpainting.py \
+    egs/mulaw_maxaudio/supra_piano \
+    egs/sample_piano.wav \
+    inpainting_outputs \
     --preset="egs/mulaw_maxaudio/config.json"
 ```
 The inpainting gap is defined in the file as `GAP`. You can change this to inpaint a different part or length of the file. The longer the gap, the more iterations (N_STEPS) you will need for good results.
@@ -61,12 +61,12 @@ Download the checkpoints for the folder `linear_quantize_max_audio` and place th
 
 Here is a sample command that separates a mixture of a piano and voice. The outputs will be written to the folder `separation_outputs` but you can change that.
 ```
-CUDA_VISIBLE_DEVICES=0 python wavenet_vocoder/pnf/sgld_separation.py
-    egs/linear_quantize_max_audio/supra_piano
-    egs/linear_quantize_max_audio/vctk/
-    egs/sample_piano.wav
-    egs/sample_voice.wav
-    separation_outputs 
+CUDA_VISIBLE_DEVICES=0 python wavenet_vocoder/pnf/sgld_separation.py \
+    egs/linear_quantize_max_audio/supra_piano \
+    egs/linear_quantize_max_audio/vctk/ \
+    egs/sample_piano.wav \
+    egs/sample_voice.wav \
+    separation_outputs  \
     --preset="egs/linear_quantize_max_audio/config.json"
 ```
 
@@ -77,3 +77,25 @@ All code should will run with multi-gpus if you specify multiple gpus in CUDA_VI
 
 ## Runtime and N_STEPS
 The number of iterations required for good outputs is mostly based on the strength of the conditioning signal. If you are running 2x super-reslution or spectrogram conditioned generation, N_STEPS = 256 is a reasonable value. If you are running something less constrained like 16x super-resolution or inpainting with a large gap, the algorithm needs many more iterations to converge. N_STEPS = 1024 is a reasonable value in those cases. You can play around with the tradeoff between the runtime and quality of the output. 
+
+
+## Creating Spectrograms for Generation
+If you have several audio files in a folder, you can run the following commands to generate spectrograms that are compatible with the generation process:
+
+```
+python preprocess.py wavallin {dataset_folder} {output_folder} --extension "*.wav" --preset "egs/mulaw_maxaudio_spectrogram/config.json" 
+```
+
+```
+find {output_folder} -type f -name "*feats.npy" > train_list.txt
+```
+
+```
+python compute-meanvar-stats.py train_list.txt {output_folder}/meanvar.joblib
+```
+
+```
+ python preprocess_normalize.py {output_folder} {normalized_spectrogram_folder} {output_folder}/meanvar.joblib
+ ```
+
+ Now the files in {normalized_spectrogram_folder} can be passed to the waveform generation script. For more details, you can see the original script here: https://github.com/r9y9/wavenet_vocoder/blob/master/egs/mulaw256/run.sh
