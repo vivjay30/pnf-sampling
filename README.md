@@ -2,7 +2,7 @@
 ![Audio Super Resolution](images/super_res_panel.png)
 
 ## Authors
-[Vivek Jayaram](http://www.vivekjayaram.com/)**\***, [John Thickstun](https://homes.cs.washington.edu/~thickstn/)<br>
+[Vivek Jayaram](http://www.vivekjayaram.com/)**\***, [John Thickstun](https://homes.cs.washington.edu/~thickstn/)**\***<br>
 *\*Equal Contribution*<br>
 University of Washington
 
